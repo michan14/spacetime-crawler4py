@@ -19,6 +19,26 @@ def extract_next_links(url, resp):
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
 
 
+    # EVERYTHING GIVEN IN THIS FUNCTION IS ALREADY VALID CAUSE ITS FROM THE FRONTIER
+    # Store all valid links here
+    links = []
+
+    # Parse content with lxml cause fastest, check if have href
+    content = BeautifulSoup(resp, "lxml")
+    for link in content.find_all("a", href=True):
+        original_url = link.get("href")
+
+        # defragment it (it returns a tuple)
+        link_defragged, dummy = urldefrag(original_url)
+        links.append(link_defragged)
+
+    return links
+
+def is_valid(url):
+    # Decide whether to crawl this url or not. 
+    # If you decide to crawl it, return True; otherwise return False.
+    # There are already some conditions that return False.
+
     # All url/path that we have to verify
     valid_url = [
         "ics.uci.edu",
@@ -28,37 +48,15 @@ def extract_next_links(url, resp):
     ]
     valid_url_path = "today.uci.edu/department/information_computer_sciences/"
 
-    # Store all valid links here
-    links = []
 
-    # Parse content with lxml cause fastest, check if have href, parse hostname, parse for no scheme
-    content = BeautifulSoup(resp, "lxml")
-    for link in content.find_all("a", href=True):
-        original_url = link.get("href")
-        parsed_url = urlparse(original_url)
-        original_url_no_scheme = urlunparse(("", parsed_url.netloc, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
+    try:
+        parsed = urlparse(url)
+        original_url_no_scheme = urlunparse(("", parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
         if original_url_no_scheme.startswith("//"):
             original_url_no_scheme = original_url_no_scheme[2:]
 
-        # if valid with links, defragment it (it returns a tuple)
-        if parsed_url.hostname:
-            for url in valid_url:
-                if parsed_url.hostname.endswith(url) or original_url_no_scheme.startswith(valid_url_path):
-                    link_defragged, dummy = urldefrag(original_url)
-                    links.append(link_defragged)
-                    break
-
-    return links
-
-def is_valid(url):
-    # Decide whether to crawl this url or not. 
-    # If you decide to crawl it, return True; otherwise return False.
-    # There are already some conditions that return False.
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in set(["http", "https"]):
-            return False
-        return not re.match(
+        # Check bad extension type
+        bad_extension_type = re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
@@ -67,6 +65,20 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+        
+        if bad_extension_type:
+            return False
+
+        # Check is not correct scheme http/https
+        if parsed.scheme not in set(["http", "https"]):
+            return False
+
+        # DO EVERYTHING RETURNING TO FALSE BEFORE CHECKING FOR TRUE
+        for url in valid_url:
+            if parsed.hostname.endswith(url) or original_url_no_scheme.startswith(valid_url_path):
+                return True
+
+        return False
 
     except TypeError:
         print ("TypeError for ", parsed)
@@ -90,8 +102,6 @@ if __name__ == "__main__":
 
     <p class="story">...</p>
     """
-    links = extract_next_links("test", html_doc) # PRETEND THAT RESP = THE EXAMPLE HTML DOC, CHANGE IT BACK WHENEVBER WITH RESP.CONTENT STUFFS
-
     # TODO EXTRACTNEXTLINKS
     # Detect and avoid dead URLs that return a 200 status but no data (click here to see what the different HTTP status codes mean
     # Crawl all pages with high textual information content (CHECK IF CONTENT GOOD, IF GOOD THEN PARSE AND GET LINKS)
@@ -101,6 +111,8 @@ if __name__ == "__main__":
 
     # TODO ISVALID
     # Detect and avoid infinite traps
+
+    links = extract_next_links("test", html_doc) # PRETEND THAT RESP = THE EXAMPLE HTML DOC, CHANGE IT BACK WHENEVBER WITH RESP.CONTENT STUFFS
 
 
     valids = [link for link in links if is_valid(link)]

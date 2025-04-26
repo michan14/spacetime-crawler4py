@@ -19,12 +19,36 @@ def extract_next_links(url, resp):
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
 
 
+
     # EVERYTHING GIVEN IN THIS FUNCTION IS ALREADY VALID CAUSE ITS FROM THE FRONTIER
     # Store all valid links here
     links = []
 
+    # Detect and avoid dead URLs that return a 200 status but no data (click here to see what the different HTTP status codes mean
+    if resp.status != 200 or resp.raw_response is None or resp.raw_response.url is None or resp.raw_response.content is None:
+        return links
+    
+    # Detect and avoid crawling very large files, especially if they have low information value
+    # 5 MB
+    if len(resp.raw_response) > 5 * (2**20):
+        return links
+    
+    # Used variables
+    content = BeautifulSoup(resp.raw_response.content, "lxml")
+
+    # Crawl all pages with high textual information content - just check if low info then return
+    paragraphs = content.find_all("p")
+    words = []
+    for paragraph in paragraphs:
+        words.append(paragraph.get_text(strip=True))
+    all_paragraphs = " ".join(words)
+
+    # Less than 50 words
+    if len(all_paragraphs.split()) <= 50:
+        return links
+
     # Parse content with lxml cause fastest, check if have href
-    content = BeautifulSoup(resp, "lxml")
+    content = BeautifulSoup(resp.raw_response.content, "lxml")
     for link in content.find_all("a", href=True):
         original_url = link.get("href")
 
@@ -103,9 +127,6 @@ if __name__ == "__main__":
     <p class="story">...</p>
     """
     # TODO EXTRACTNEXTLINKS
-    # Detect and avoid dead URLs that return a 200 status but no data (click here to see what the different HTTP status codes mean
-    # Crawl all pages with high textual information content (CHECK IF CONTENT GOOD, IF GOOD THEN PARSE AND GET LINKS)
-    # Detect and avoid crawling very large files, especially if they have low information value (SAME AS ABOVE IF LOW INFO VALUE/LARGE SIZE DONT BOTHER)
     # Detect and avoid sets of similar pages with no information
     # Honor the politeness delay for each site
 

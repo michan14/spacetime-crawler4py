@@ -96,6 +96,15 @@ def is_valid(url):
         # Check is not correct scheme http/https
         if parsed.scheme not in set(["http", "https"]):
             return False
+        
+        # Detect and avoid infinite traps
+        #https://www.conductor.com/academy/crawler-traps/
+        traps = ["calendar", "year=", "month=", "day=", "date=", "page=", "sort=", "id=", 
+                 "page=", "p=", "page_id=", "pageid=", "search", "filter=", "limit=", "order=",
+                 "replytocom=", "reply=", "archive", "archives", "past", "old"]
+        for trap in traps:
+            if trap in parsed.path or trap in parsed.query:
+                return False
 
         # DO EVERYTHING RETURNING TO FALSE BEFORE CHECKING FOR TRUE
         for url in valid_url:
@@ -122,16 +131,13 @@ if __name__ == "__main__":
     <a href="https://tutoring.ics.uci.edu/resources/" class="sister" id="link3">Tillie</a>;
     <a href="https://today.uci.edu/department/information_computer_sciences/" class="sister" id="link3">Tillie</a>;
     <a href="https://cs.ics.uci.edu/" class="sisterdafdsafdsa" id="link3">Tilliefdsafdsa</a>;
+    <a href="http://docs.python.org:80/3/library/urllib.parse.html?highlight=params#url-parsing" class="sister" id="link1">Elsie</a>,
     and they lived at the bottom of a well.</p>
 
     <p class="story">...</p>
     """
     # TODO EXTRACTNEXTLINKS
     # Detect and avoid sets of similar pages with no information
-    # Honor the politeness delay for each site
-
-    # TODO ISVALID
-    # Detect and avoid infinite traps
 
     links = extract_next_links("test", html_doc) # PRETEND THAT RESP = THE EXAMPLE HTML DOC, CHANGE IT BACK WHENEVBER WITH RESP.CONTENT STUFFS
 

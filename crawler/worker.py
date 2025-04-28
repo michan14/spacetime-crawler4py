@@ -45,33 +45,9 @@ class Worker(Thread):
             self.logger.info(
                 f"Downloaded {tbd_url}, status <{resp.status}>, "
                 f"using cache {self.config.cache_server}.")
-            
-            # CHANGE?
             scraped_urls = scraper.scraper(tbd_url, resp)
             for scraped_url in scraped_urls:
                 self.frontier.add_url(scraped_url)
-            # CHANGE?
-
-            # NEW 
-            scraped_urls, page_text = scraper.scraper(tbd_url, resp)
-
-            if page_text:
-                page_simhash = simhash(page_text)
-
-                is_duplicate = False
-                for prev_simhash in self.all_simhashes:
-                    distance = compare_simhashes(page_simhash, prev_simhash)
-                    if distance < 5:
-                        is_duplicate = True
-                        self.logger.info(f"Duplicate page detected: {tbd_url} (distance {distance})")
-                        break
-
-                if not is_duplicate:
-                    self.all_simhashes.append(page_simhash)
-                    for scraped_url in scraped_urls:
-                        self.frontier.add_url(scraped_url)
-            # NEW
-
             self.frontier.mark_url_complete(tbd_url)
             # Re add the prev time domain was accessed
             self.domains_with_times[domain] = time.time()

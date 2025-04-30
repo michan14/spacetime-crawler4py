@@ -29,7 +29,7 @@ class Worker(Thread):
                 scraper.make_report()
                 break
             
-            # Honor the politeness delay for each site, just using time.sleep with politeness delay in config
+            # Honor the politeness delay for each site
             domain = urlparse(tbd_url).netloc
 
             if domain in self.domains_with_times:

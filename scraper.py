@@ -13,20 +13,23 @@ top_50_words = {}
 sub_domains = {}
 
 # Stop words
-stop_words = []
+stop_words = ['a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', "aren't", 'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', "can't", 'cannot', 'could', "couldn't", 'did', "didn't", 'do', 'does', "doesn't", 'doing', "don't", 'down', 'during', 'each', 'few', 'for', 'from', 'further', 'had', "hadn't", 'has', "hasn't", 'have', "haven't", 'having', 'he', "he'd", "he'll", "he's", 'her', 'here', "here's", 'hers', 'herself', 'him', 'himself', 'his', 'how', "how's", 'i', "i'd", "i'll", "i'm", "i've", 'if', 'in', 'into', 'is', "isn't", 'it', "it's", 'its', 'itself', "let's", 'me', 'more', 'most', "mustn't", 'my', 
+'myself', 'no', 'nor', 'not', 'of', 'off', 'on', 'once', 'only', 'or', 'other', 'ought', 'our', 'ours', 'ourselves', 'out', 'over', 'own', 'same', "shan't", 'she', "she'd", "she'll", "she's", 'should', "shouldn't", 'so', 'some', 
+'such', 'than', 'that', "that's", 'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', "there's", 'these', 'they', "they'd", "they'll", "they're", "they've", 'this', 'those', 'through', 'to', 'too', 'under', 'until', 
+'up', 'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were', "weren't", 'what', "what's", 'when', "when's", 'where', "where's", 'which', 'while', 'who', "who's", 'whom', 'why', "why's", 'with', "won't", 'would', "wouldn't", 'you', "you'd", "you'll", "you're", "you've", 'your', 'yours', 'yourself', 'yourselves']
 
 def make_report():
-    with open("report.txt", "a+") as file:
+    with open("report.txt", "w") as file:
         file.write(f"Unique pages: {len(unique_pages)}")
-        file.write(f"\nLongest Page: {longest_page}")
-        file.write(f"\nTop 50 words:")
-        sorted_word_freq = sorted(top_50_words.items(), key=lambda word: word[1], reverse=True)
+        file.write(f"\n\nLongest Page: {longest_page}")
+        file.write(f"\n\nTop 50 words:")
+        sorted_word_freq = dict(sorted(top_50_words.items(), key=lambda word: word[1], reverse=True)[:50])
         for word, freq in sorted_word_freq.items():
-            file.write(f"{word}: {freq}")
+            file.write(f"\n{word} - {freq}")
         
-        file.write(f"\n\nUnique pages:")
+        file.write(f"\n\nSubdomains:")
         for domain in sorted(sub_domains.keys()):
-            file.write(f"{domain}: {sub_domains[domain]}")
+            file.write(f"\n{domain} - {sub_domains[domain]}")
 
 
 def scraper(url, resp):
@@ -87,39 +90,42 @@ def extract_next_links(url, resp):
     # Not similar to past ones, add to all_hashes
     all_hashes.append(final_hash)
 
+    # FOR REPORT
+    all_text = get_clean_words(content)
+
     # All checks passed, defragment and return
     for link in content.find_all("a", href=True):
         original_url = link.get("href")
 
         # defragment it (it returns a tuple)
-        link_defragged, dummy = urldefrag(original_url)
+        link_defragged, _ = urldefrag(original_url)
         links.append(link_defragged)
 
-    # FOR REPORT
-    all_text = get_clean_words(content)
+        # Unique pages
+        if link_defragged not in unique_pages:
+            unique_pages.add(link_defragged)
+        
+        # Subdomains
+        parsed = urlparse(link_defragged)
+        if parsed.hostname and parsed.hostname.endswith("uci.edu") and parsed.hostname != "uci.edu":
+            sub_domains[parsed.hostname] = 1 + sub_domains.get(parsed.hostname, 0)
 
-    # Unique pages
-    if link_defragged not in unique_pages:
-        unique_pages.add(link_defragged)
-    
-    # Longest num of words
+    # Longest num of words not html markup
     text_length = len(all_text)
-    if text_length > list(longest_page.values())[0]:
+    if longest_page and text_length > list(longest_page.values())[0]:
         longest_page.clear()
         longest_page[url] = text_length
-    
+    elif not longest_page:
+        longest_page[url] = text_length
+
     # 50 most common words
     for word in all_text:
         lower_word = word.lower()
         if lower_word not in stop_words:
-            top_50_words[word] = 1 + top_50_words.get(word, 0)
-    
-    # Subdomains
-    parsed = urlparse(url)
-    if parsed.hostname and parsed.hostname.endswith("uci.edu") and parsed.hostname != "uci.edu":
-        sub_domains[parsed.hostname] = 1 + sub_domains.get(parsed.hostname, 0)
+            top_50_words[lower_word] = 1 + top_50_words.get(lower_word, 0)
 
     return links
+
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
@@ -162,7 +168,7 @@ def is_valid(url):
         
         # Detect and avoid infinite traps
         #https://www.conductor.com/academy/crawler-traps/
-        traps = ["calendar", "year=", "month=", "day=", "date=", "page=", "sort=", "id=", 
+        traps = ["calendar", "year=", "month=", "day=", "date=", "sort=", "id=", 
                  "page=", "p=", "page_id=", "pageid=", "search", "filter=", "filter", "limit=", "limit", "order=",
                  "replytocom=", "reply=", "archive", "archives", "past", "old",
                  "year", "month", "day", "date", "page", "sort", "id", "p", "page_id"]
@@ -187,6 +193,7 @@ def is_valid(url):
         raise
 
 
+# Get frequency of words
 def get_word_freq(all_clean_words):
     word_freq = {}
     for word in all_clean_words:
@@ -194,6 +201,7 @@ def get_word_freq(all_clean_words):
     return word_freq
 
 
+# Get clean words ascii
 def get_clean_words(content):
     all_text = content.get_text(separator=" ", strip=True).split()
     all_clean_words = []
@@ -205,13 +213,15 @@ def get_clean_words(content):
 
     return all_clean_words
 
+
+# Simhash and save
 def simhash(content):
     all_clean_words = get_clean_words(content)
     word_freq = get_word_freq(all_clean_words)
     
     all_hashes = []
     for word, freq in word_freq.items():
-        for dummy in range(freq):
+        for _ in range(freq):
             hashed = hashlib.sha1(word.encode("utf-8")).hexdigest()
             all_hashes.append(hashed)
 
@@ -220,6 +230,7 @@ def simhash(content):
     return final_hash
 
 
+# Compare simhashes
 def compare_simhashes(simhash1, simhash2):
     int_simhash1 = int(simhash1, 16)
     int_simhash2 = int(simhash2, 16)

@@ -13,9 +13,6 @@ class Worker(Thread):
         # Save time accessed to domains
         self.domains_with_times = {}
 
-        # All hashes
-        self.all_simhashes = []
-
         self.logger = get_logger(f"Worker-{worker_id}", "Worker")
         self.config = config
         self.frontier = frontier
@@ -29,6 +26,7 @@ class Worker(Thread):
             tbd_url = self.frontier.get_tbd_url()
             if not tbd_url:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
+                scraper.make_report()
                 break
             
             # Honor the politeness delay for each site, just using time.sleep with politeness delay in config

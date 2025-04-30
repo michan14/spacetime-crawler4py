@@ -1,13 +1,37 @@
 import re
-import requests
 from urllib.parse import urlparse, urldefrag, urlunparse
 from bs4 import BeautifulSoup
 import hashlib
-import json
 
-# def scraper(url, resp):
-#     links = extract_next_links(url, resp)
-#     return [link for link in links if is_valid(link)]
+# Define all hashes in global scope in memory
+all_hashes = []
+
+# For report
+unique_pages = set()
+longest_page = {}
+top_50_words = {}
+sub_domains = {}
+
+# Stop words
+stop_words = []
+
+def make_report():
+    with open("report.txt", "a+") as file:
+        file.write(f"Unique pages: {len(unique_pages)}")
+        file.write(f"\nLongest Page: {longest_page}")
+        file.write(f"\nTop 50 words:")
+        sorted_word_freq = sorted(top_50_words.items(), key=lambda word: word[1], reverse=True)
+        for word, freq in sorted_word_freq.items():
+            file.write(f"{word}: {freq}")
+        
+        file.write(f"\n\nUnique pages:")
+        for domain in sorted(sub_domains.keys()):
+            file.write(f"{domain}: {sub_domains[domain]}")
+
+
+def scraper(url, resp):
+    links = extract_next_links(url, resp)
+    return [link for link in links if is_valid(link)]
 
 def extract_next_links(url, resp):
     # Implementation required.
@@ -20,9 +44,6 @@ def extract_next_links(url, resp):
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
 
-
-
-    # EVERYTHING GIVEN IN THIS FUNCTION IS ALREADY VALID CAUSE ITS FROM THE FRONTIER
     # Store all valid links here
     links = []
 
@@ -53,31 +74,18 @@ def extract_next_links(url, resp):
     #https://spotintelligence.com/2023/01/02/simhash/
     # simhash
     # Create/open hashes json
-    try:
-        with open("all_hashes.json", "r") as file:
-            all_hashes = json.load(file)
-    except FileNotFoundError:
-        all_hashes = {}
-        with open("all_hashes.json", "w") as file:
-            json.dump(all_hashes, file, indent=4)
-    
+
     # Get final hash of current content
     final_hash = simhash(content)
 
-    # Load all prev hashes
-    with open("all_hashes.json", "r") as file:
-        all_hashes = json.load(file)
-
     # Check if current hash is similar to prev ones, if so return empty
-    for prev_hashes in all_hashes.values():
+    for prev_hashes in all_hashes:
         distance = compare_simhashes(final_hash, prev_hashes)
         if distance < 5:
             return links
 
-    # Not similar to past ones, add to prev hashes json
-    all_hashes[url] = final_hash
-    with open("all_hashes.json", "w") as file:
-        json.dump(all_hashes, file, indent=4)
+    # Not similar to past ones, add to all_hashes
+    all_hashes.append(final_hash)
 
     # All checks passed, defragment and return
     for link in content.find_all("a", href=True):
@@ -86,6 +94,30 @@ def extract_next_links(url, resp):
         # defragment it (it returns a tuple)
         link_defragged, dummy = urldefrag(original_url)
         links.append(link_defragged)
+
+    # FOR REPORT
+    all_text = get_clean_words(content)
+
+    # Unique pages
+    if link_defragged not in unique_pages:
+        unique_pages.add(link_defragged)
+    
+    # Longest num of words
+    text_length = len(all_text)
+    if text_length > list(longest_page.values())[0]:
+        longest_page.clear()
+        longest_page[url] = text_length
+    
+    # 50 most common words
+    for word in all_text:
+        lower_word = word.lower()
+        if lower_word not in stop_words:
+            top_50_words[word] = 1 + top_50_words.get(word, 0)
+    
+    # Subdomains
+    parsed = urlparse(url)
+    if parsed.hostname and parsed.hostname.endswith("uci.edu") and parsed.hostname != "uci.edu":
+        sub_domains[parsed.hostname] = 1 + sub_domains.get(parsed.hostname, 0)
 
     return links
 
@@ -132,15 +164,21 @@ def is_valid(url):
         #https://www.conductor.com/academy/crawler-traps/
         traps = ["calendar", "year=", "month=", "day=", "date=", "page=", "sort=", "id=", 
                  "page=", "p=", "page_id=", "pageid=", "search", "filter=", "filter", "limit=", "limit", "order=",
-                 "replytocom=", "reply=", "archive", "archives", "past", "old"]
-        for trap in traps:
-            if trap in parsed.path or trap in parsed.query:
-                return False
+                 "replytocom=", "reply=", "archive", "archives", "past", "old",
+                 "year", "month", "day", "date", "page", "sort", "id", "p", "page_id"]
+        path_words = [word for word in (parsed.path).split("/") if word]
+        query_words = (re.sub(r"[^A-Za-z]", " ", parsed.query)).split()
+        all_path_query_words = set(path_words + query_words)
+        bad_traps_bool = all_path_query_words & set(traps)
+
+        if bad_traps_bool:
+            return False
 
         # DO EVERYTHING RETURNING TO FALSE BEFORE CHECKING FOR TRUE
-        for url in valid_url:
-            if parsed.hostname.endswith(url) or original_url_no_scheme.startswith(valid_url_path):
-                return True
+        if parsed.hostname:
+            for url in valid_url:
+                if parsed.hostname.endswith(url) or original_url_no_scheme.startswith(valid_url_path):
+                    return True
 
         return False
 
@@ -190,62 +228,27 @@ def compare_simhashes(simhash1, simhash2):
 
     return distance
 
+# when all checks good/call in extractnextlinks,
 
-if __name__ == "__main__":
-    html_doc = """
-    <html><head><title>The Dormouse's story</title></head>
-    <body>
-    <p class="title"><b>The Dormouse's story</b></p>
+# unique pages: just store all in array, if new url not in array, add it
+# - use len(unique_pages) when making report
 
-    <p class="story">Once upon a time there were three little sisters; and their names were
-    <a href="http://example.com/elsie#bruh" class="sister" id="link1">Elsie</a>,
-    <a href="https://ics.uci.edu/facts-figures/ics-mission-history/" class="sister" id="link2">Lacie</a> and
-    <a href="https://cs.ics.uci.edu/" class="sister" id="link3">Tillie</a>;
-    <a href="https://tutoring.ics.uci.edu/resources/" class="sister" id="link3">Tillie</a>;
-    <a href="https://today.uci.edu/department/information_computer_sciences/" class="sister" id="link3">Tillie</a>;
-    <a href="https://ics.uci.edu/~wjohnson/BIDA/Ch8/prioriterates.txt" class="sisterdafdsafdsa" id="link3">Tilliefdsafdsa</a>;
-    <a href="http://docs.python.org:80/3/library/urllib.parse.html?highlight=params#url-parsing" class="sister" id="link1">Elsie</a>,
-    and they lived at the bottom of a well.</p>
+# longest num of words not including html markup, use get_text() beutifl soup
+# - store this url/num in a dict, if > then change
 
-    <p class="story">Generating random paragraphs can be an excellent way for writers to get their creative flow going at the beginning of the day. The writer has no idea what topic the random paragraph will be about when it appears. This forces the writer to use creativity to complete one of three common writing challenges. The writer can use the paragraph as the first one of a short story and build upon it. A second option is to use the random paragraph somewhere in a short story they create. The third option is to have the random paragraph be the ending paragraph in a short story. No matter which of these challenges is undertaken, the writer is forced to use creativity to incorporate the paragraph into their writing. </p>
-    """
+# 50 most common words not including english stop words that are sorted by frequency
+# - use all_clean_words = get_clean_words(content), word_freq = get_word_freq(all_clean_words)
+# - instaed of get_word_freq, make new function using the global dict
+# - if not in english stop words add to dict
+# - sort in make_report, like in A1
 
-    html_doc2 = """
-    <html><head><title>The Dormouse's story</title></head>
-    <body>
-    <p class="title"><b>The Dormouse's story</b></p>
+# Subdomains in uci.edu (ex: https://cs.ics.uci.edu/)
+# - like in word_freq
+# - get hostname
+# - if hostname=TRUE and hostname ends with uci.edu, do the get thing leetcode with 1 + get on dict
+# - in make_report sort alphabetically
 
-    <p class="story">Once upon a time there were three little sisters; and their names were
-    <a href="http://example.com/elsie#bruh" class="sister" id="link1">Elsie</a>,
-    <a href="https://ics.uci.edu/facts-figures/ics-mission-history/" class="sister" id="link2">Lacie</a> and
-    <a href="https://cs.ics.uci.edu/" class="sister" id="link3">Tillie</a>;
-    <a href="https://tutoring.ics.uci.edu/resources/" class="sister" id="link3">Tillie</a>;
-    <a href="https://today.uci.edu/department/information_computer_sciences/" class="sister" id="link3">Tillie</a>;
-    <a href="https://ics.uci.edu/~wjohnson/BIDA/Ch8/prioriterates.txt" class="sisterdafdsafdsa" id="link3">Tilliefdsafdsa</a>;
-    <a href="http://docs.python.org:80/3/library/urllib.parse.html?highlight=params#url-parsing" class="sister" id="link1">Elsie</a>,
-    and they lived at the bottom of a well.</p>
+# in worker when make_report is called and info is returned (4 things)
+# - make 4 different txt files containng them
 
-    <p class="story">Generating random paragraphs can be an excellent way for writers to get their creative flow going at the beginning of the day. The writer has no idea what topic the random paragraph will be about when it appears. This forces the writer to use creativity to complete one of three common writing challenges. The writer can use the paragraph as the first one of a short story and build upon it. A second option is to use the random paragraph somewhere in a short story they create. The third option is to have the random paragraph be the ending paragraph in a short story. No matter which of these challenges is undertaken, the writer is forced to use creativity to incorporate the paragraph into their writing. </p>
-    """
-
-    class FakeResp:
-        def __init__(self, content):
-            self.status = 200
-            self.raw_response = self
-            self.url = "http://test.com"
-            self.content = content.encode("utf-8")
-
-    resp = FakeResp(html_doc)
-    resp2 = FakeResp(html_doc2)
-    links = extract_next_links("http://test.com", resp)
-    links2 = extract_next_links("http://test.com", resp2)
-
-
-
-    valids = [link for link in links if is_valid(link)]
-    for l in valids:
-        print(l)
-
-    valids2 = [link for link in links2 if is_valid(link)]
-    for l in valids2:
-        print(l)
+# CALL MAKE REPORT IN WORKER WHEN FRONTIER DONE

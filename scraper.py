@@ -1,5 +1,5 @@
 import re
-from urllib.parse import urlparse, urldefrag, urlunparse
+from urllib.parse import urlparse, urldefrag, urlunparse, parse_qs
 from bs4 import BeautifulSoup
 import hashlib
 
@@ -27,7 +27,7 @@ def make_report():
         for word, freq in sorted_word_freq.items():
             file.write(f"\n{word} - {freq}")
         
-        file.write(f"\n\nSubdomains:")
+        file.write(f"\n\nSubdomains: {len(sub_domains)}")
         for domain in sorted(sub_domains.keys()):
             file.write(f"\n{domain} - {sub_domains[domain]}")
 
@@ -70,13 +70,12 @@ def extract_next_links(url, resp):
     all_paragraphs = " ".join(words)
 
     # Less than 50 words
-    if len(all_paragraphs.split()) <= 50:
+    if len(all_paragraphs.split()) <= 35:
         return links
     
     # Detect and avoid sets of similar pages with no information
     #https://spotintelligence.com/2023/01/02/simhash/
     # simhash
-    # Create/open hashes json
 
     # Get final hash of current content
     final_hash = simhash(content)
@@ -84,7 +83,7 @@ def extract_next_links(url, resp):
     # Check if current hash is similar to prev ones, if so return empty
     for prev_hashes in all_hashes:
         distance = compare_simhashes(final_hash, prev_hashes)
-        if distance < 5:
+        if distance < 3:
             return links
 
     # Not similar to past ones, add to all_hashes
@@ -107,8 +106,8 @@ def extract_next_links(url, resp):
         
         # Subdomains
         parsed = urlparse(link_defragged)
-        if parsed.hostname and parsed.hostname.endswith("uci.edu") and parsed.hostname != "uci.edu":
-            sub_domains[parsed.hostname] = 1 + sub_domains.get(parsed.hostname, 0)
+        if parsed.netloc and parsed.netloc.endswith("uci.edu") and parsed.netloc != "uci.edu":
+            sub_domains[parsed.netloc] = 1 + sub_domains.get(parsed.netloc, 0)
 
     # Longest num of words not html markup
     text_length = len(all_text)
@@ -157,7 +156,7 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz|xml)$", parsed.path.lower())
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz|xml|apk|war|img|sql|ppsx)$", parsed.path.lower())
         
         if bad_extension_type:
             return False
@@ -165,25 +164,36 @@ def is_valid(url):
         # Check is not correct scheme http/https
         if parsed.scheme not in set(["http", "https"]):
             return False
-        
+
         # Detect and avoid infinite traps
         #https://www.conductor.com/academy/crawler-traps/
-        traps = ["calendar", "year=", "month=", "day=", "date=", "sort=", "id=", 
-                 "page=", "p=", "page_id=", "pageid=", "search", "filter=", "filter", "limit=", "limit", "order=",
-                 "replytocom=", "reply=", "archive", "archives", "past", "old",
-                 "year", "month", "day", "date", "page", "sort", "id", "p", "page_id"]
-        path_words = [word for word in (parsed.path).split("/") if word]
-        query_words = (re.sub(r"[^A-Za-z]", " ", parsed.query)).split()
-        all_path_query_words = set(path_words + query_words)
-        bad_traps_bool = all_path_query_words & set(traps)
+        traps = ["calendar", "year=", "month=", "day=", "date=",
+                "year", "month", "day", "date"
+                "week", "week=", "sort=", "id=",
+                "tribe", "custom", "doku.php",
+                "page=", "page_id=", "pageid=",
+                "page", "sort", "id", "page_id",
+                "search", "filter=", "filter", "limit=", "limit", "order=",
+                "replytocom=", "reply=", "mailto=", "mailto:",
+                "ical"]
 
-        if bad_traps_bool:
+        path_words = [word.lower() for word in (parsed.path).split("/") if word]
+        if set(traps).intersection(path_words):
+            return False
+        
+        query_words = set(key.lower() for key in parse_qs(parsed.query).keys())
+        if set(traps).intersection(query_words):
+            return False
+        
+        # FOR DATES AKA THE ICS CALENDAR, gets 4digit-2digit-optional 2digit, if any path matches, false
+        date = re.compile(r"\b\d{4}-\d{2}(-\d{2})?\b")
+        if any(date.fullmatch(word) for word in path_words):
             return False
 
         # DO EVERYTHING RETURNING TO FALSE BEFORE CHECKING FOR TRUE
-        if parsed.hostname:
+        if parsed.netloc:
             for url in valid_url:
-                if parsed.hostname.endswith(url) or original_url_no_scheme.startswith(valid_url_path):
+                if parsed.netloc.lower().endswith(url) or original_url_no_scheme.lower().startswith(valid_url_path):
                     return True
 
         return False

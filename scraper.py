@@ -59,19 +59,27 @@ def scraper(url, resp):
 
     valid_links = []
     for link in links:
-        if is_valid(link):
-            valid_links.append(link)
+        if is_valid_domain(link):
             # Unique pages
             if link not in unique_pages:
                 unique_pages.add(link)
 
-                with open(SAVE_FILE, "w") as file:
-                    json.dump({
-                        "unique_pages": list(unique_pages),
-                        "longest_page": longest_page,
-                        "top_50_words": top_50_words,
-                        "sub_domains": sub_domains
-                    }, file, indent=4)
+            # Subdomains
+            parsed = urlparse(link)
+            if parsed.netloc and parsed.netloc.endswith("uci.edu") and parsed.netloc != "uci.edu" and "@" not in parsed.netloc:
+                sub_domains[parsed.netloc] = 1 + sub_domains.get(parsed.netloc, 0)
+
+        if is_valid(link):
+            valid_links.append(link)
+    
+    with open(SAVE_FILE, "w") as file:
+        json.dump({
+            "unique_pages": list(unique_pages),
+            "longest_page": longest_page,
+            "top_50_words": top_50_words,
+            "sub_domains": sub_domains
+        }, file, indent=4)
+
     return valid_links
 
 
@@ -108,7 +116,11 @@ def extract_next_links(url, resp):
         words.append(paragraph.get_text(strip=True))
     all_paragraphs = " ".join(words)
 
-    # Less than 50 words
+    # Greater than 5000 paragraph words
+    if len(all_paragraphs.split()) >= 5000:
+        return links
+
+    # Less than 35 words
     if len(all_paragraphs.split()) <= 35:
         return links
     
@@ -159,11 +171,6 @@ def extract_next_links(url, resp):
         # defragment it (it returns a tuple)
         link_defragged, _ = urldefrag(original_url)
         links.append(link_defragged)
-        
-        # Subdomains
-        parsed = urlparse(link_defragged)
-        if parsed.netloc and parsed.netloc.endswith("uci.edu") and parsed.netloc != "uci.edu":
-            sub_domains[parsed.netloc] = 1 + sub_domains.get(parsed.netloc, 0)
 
     # Longest num of words not html markup
     text_length = len(all_text)
@@ -175,9 +182,10 @@ def extract_next_links(url, resp):
 
     # 50 most common words
     for word in all_text:
-        lower_word = word.lower()
-        if lower_word not in stop_words:
-            top_50_words[lower_word] = 1 + top_50_words.get(lower_word, 0)
+        if not word.isdigit():
+            lower_word = word.lower()
+            if lower_word not in stop_words:
+                top_50_words[lower_word] = 1 + top_50_words.get(lower_word, 0)
 
     # Save into save file
     with open(SAVE_FILE, "w") as file:
@@ -196,21 +204,8 @@ def is_valid(url):
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
 
-    # All url/path that we have to verify
-    valid_url = [
-        "ics.uci.edu",
-        "cs.uci.edu",
-        "informatics.uci.edu",
-        "stat.uci.edu",
-    ]
-    valid_url_path = "today.uci.edu/department/information_computer_sciences/"
-
-
     try:
         parsed = urlparse(url)
-        original_url_no_scheme = urlunparse(("", parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
-        if original_url_no_scheme.startswith("//"):
-            original_url_no_scheme = original_url_no_scheme[2:]
 
         # Check bad extension type
         bad_extension_type = re.match(
@@ -255,13 +250,8 @@ def is_valid(url):
         if any(date.fullmatch(word) for word in path_words):
             return False
 
-        # DO EVERYTHING RETURNING TO FALSE BEFORE CHECKING FOR TRUE
-        if parsed.netloc:
-            for url in valid_url:
-                if parsed.netloc.lower().endswith(url) or original_url_no_scheme.lower().startswith(valid_url_path):
-                    return True
-
-        return False
+        # Check if valid domain
+        return is_valid_domain(url)
 
     except TypeError:
         print ("TypeError for ", parsed)
@@ -313,6 +303,33 @@ def compare_simhashes(simhash1, simhash2):
     distance = bin(int_simhash1 ^ int_simhash2).count('1')
 
     return distance
+
+
+def is_valid_domain(url):
+    # All url/path that we have to verify
+    valid_url = [
+        "ics.uci.edu",
+        "cs.uci.edu",
+        "informatics.uci.edu",
+        "stat.uci.edu",
+    ]
+    valid_url_path = "today.uci.edu/department/information_computer_sciences/"
+
+    try:
+        parsed = urlparse(url)
+        original_url_no_scheme = urlunparse(("", parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
+        if original_url_no_scheme.startswith("//"):
+            original_url_no_scheme = original_url_no_scheme[2:]
+
+        if parsed.netloc:
+            for url in valid_url:
+                if parsed.netloc.lower().endswith(url) or original_url_no_scheme.lower().startswith(valid_url_path):
+                    return True
+        return False
+
+    except TypeError:
+        print ("TypeError for ", parsed)
+        raise
 
 # when all checks good/call in extractnextlinks,
 

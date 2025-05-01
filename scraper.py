@@ -42,7 +42,37 @@ def make_report():
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+
+    # Load json save file
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as file:
+            json_file = json.load(file)
+            unique_pages = set(json_file["unique_pages"])
+            longest_page = json_file["longest_page"]
+            top_50_words = json_file["top_50_words"]
+            sub_domains = json_file["sub_domains"]
+    else:
+        unique_pages = set()
+        longest_page = {}
+        top_50_words = {}
+        sub_domains = {}
+
+    valid_links = []
+    for link in links:
+        if is_valid(link):
+            valid_links.append(link)
+            # Unique pages
+            if link not in unique_pages:
+                unique_pages.add(link)
+
+                with open(SAVE_FILE, "w") as file:
+                    json.dump({
+                        "unique_pages": list(unique_pages),
+                        "longest_page": longest_page,
+                        "top_50_words": top_50_words,
+                        "sub_domains": sub_domains
+                    }, file, indent=4)
+    return valid_links
 
 
 def extract_next_links(url, resp):
@@ -129,10 +159,6 @@ def extract_next_links(url, resp):
         # defragment it (it returns a tuple)
         link_defragged, _ = urldefrag(original_url)
         links.append(link_defragged)
-
-        # Unique pages
-        if link_defragged not in unique_pages:
-            unique_pages.add(link_defragged)
         
         # Subdomains
         parsed = urlparse(link_defragged)
@@ -153,6 +179,7 @@ def extract_next_links(url, resp):
         if lower_word not in stop_words:
             top_50_words[lower_word] = 1 + top_50_words.get(lower_word, 0)
 
+    # Save into save file
     with open(SAVE_FILE, "w") as file:
         json.dump({
             "unique_pages": list(unique_pages),

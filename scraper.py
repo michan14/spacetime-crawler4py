@@ -2,15 +2,11 @@ import re
 from urllib.parse import urlparse, urldefrag, urlunparse, parse_qs
 from bs4 import BeautifulSoup
 import hashlib
+import json
+import os
 
-# Define all hashes in global scope in memory
-all_hashes = []
-
-# For report
-unique_pages = set()
-longest_page = {}
-top_50_words = {}
-sub_domains = {}
+SAVE_FILE = "saved_vars.json"
+HASHES_FILE = "all_hashes.json"
 
 # Stop words
 stop_words = ['a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', 'an', 'and', 'any', 'are', "aren't", 'as', 'at', 'be', 'because', 'been', 'before', 'being', 'below', 'between', 'both', 'but', 'by', "can't", 'cannot', 'could', "couldn't", 'did', "didn't", 'do', 'does', "doesn't", 'doing', "don't", 'down', 'during', 'each', 'few', 'for', 'from', 'further', 'had', "hadn't", 'has', "hasn't", 'have', "haven't", 'having', 'he', "he'd", "he'll", "he's", 'her', 'here', "here's", 'hers', 'herself', 'him', 'himself', 'his', 'how', "how's", 'i', "i'd", "i'll", "i'm", "i've", 'if', 'in', 'into', 'is', "isn't", 'it', "it's", 'its', 'itself', "let's", 'me', 'more', 'most', "mustn't", 'my', 
@@ -18,23 +14,36 @@ stop_words = ['a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', '
 'such', 'than', 'that', "that's", 'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', "there's", 'these', 'they', "they'd", "they'll", "they're", "they've", 'this', 'those', 'through', 'to', 'too', 'under', 'until', 
 'up', 'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were', "weren't", 'what', "what's", 'when', "when's", 'where', "where's", 'which', 'while', 'who', "who's", 'whom', 'why', "why's", 'with', "won't", 'would', "wouldn't", 'you', "you'd", "you'll", "you're", "you've", 'your', 'yours', 'yourself', 'yourselves']
 
+
 def make_report():
+    with open("saved_vars.json", "r") as f:
+        state = json.load(f)
+        unique_pages = set(state["unique_pages"])
+        longest_page = state["longest_page"]
+        top_50_words = state["top_50_words"]
+        sub_domains = state["sub_domains"]
+
     with open("report.txt", "w") as file:
         file.write(f"Unique pages: {len(unique_pages)}")
-        file.write(f"\n\nLongest Page: {longest_page}")
-        file.write(f"\n\nTop 50 words:")
-        sorted_word_freq = dict(sorted(top_50_words.items(), key=lambda word: word[1], reverse=True)[:50])
-        for word, freq in sorted_word_freq.items():
-            file.write(f"\n{word} - {freq}")
-        
-        file.write(f"\n\nSubdomains: {len(sub_domains)}")
-        for domain in sorted(sub_domains.keys()):
-            file.write(f"\n{domain} - {sub_domains[domain]}")
+
+        file.write(f"\n\nLongest Page:\n")
+        for url, count in longest_page.items():
+            file.write(f"{url} - {count} words\n")
+
+        file.write(f"\nTop 50 words:\n")
+        sorted_word_freq = sorted(top_50_words.items(), key=lambda word: word[1], reverse=True)[:50]
+        for word, freq in sorted_word_freq:
+            file.write(f"{word} - {freq}\n")
+
+        file.write(f"\nSubdomains {len(sub_domains)}:\n")
+        for domain in sorted(sub_domains):
+            file.write(f"{domain} - {sub_domains[domain]}\n")
 
 
 def scraper(url, resp):
     links = extract_next_links(url, resp)
     return [link for link in links if is_valid(link)]
+
 
 def extract_next_links(url, resp):
     # Implementation required.
@@ -76,21 +85,42 @@ def extract_next_links(url, resp):
     # Detect and avoid sets of similar pages with no information
     #https://spotintelligence.com/2023/01/02/simhash/
     # simhash
+    if os.path.exists(HASHES_FILE):
+        with open(HASHES_FILE, "r") as file:
+            all_hashes = json.load(file)
+    else:
+        all_hashes = {}
 
     # Get final hash of current content
     final_hash = simhash(content)
 
     # Check if current hash is similar to prev ones, if so return empty
-    for prev_hashes in all_hashes:
+    for prev_hashes in all_hashes.values():
         distance = compare_simhashes(final_hash, prev_hashes)
         if distance < 3:
             return links
 
-    # Not similar to past ones, add to all_hashes
-    all_hashes.append(final_hash)
+    # Not similar to past ones, add to prev hashes json
+    all_hashes[url] = final_hash
+    with open("all_hashes.json", "w") as file:
+        json.dump(all_hashes, file, indent=4)
 
     # FOR REPORT
     all_text = get_clean_words(content)
+
+    # Load json save file
+    if os.path.exists(SAVE_FILE):
+        with open(SAVE_FILE, "r") as file:
+            json_file = json.load(file)
+            unique_pages = set(json_file["unique_pages"])
+            longest_page = json_file["longest_page"]
+            top_50_words = json_file["top_50_words"]
+            sub_domains = json_file["sub_domains"]
+    else:
+        unique_pages = set()
+        longest_page = {}
+        top_50_words = {}
+        sub_domains = {}
 
     # All checks passed, defragment and return
     for link in content.find_all("a", href=True):
@@ -122,6 +152,14 @@ def extract_next_links(url, resp):
         lower_word = word.lower()
         if lower_word not in stop_words:
             top_50_words[lower_word] = 1 + top_50_words.get(lower_word, 0)
+
+    with open(SAVE_FILE, "w") as file:
+        json.dump({
+            "unique_pages": list(unique_pages),
+            "longest_page": longest_page,
+            "top_50_words": top_50_words,
+            "sub_domains": sub_domains
+        }, file, indent=4)
 
     return links
 

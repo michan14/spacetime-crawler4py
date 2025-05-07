@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import hashlib
 import json
 import os
+from collections import Counter
 
 SAVE_FILE = "saved_vars.json"
 HASHES_FILE = "all_hashes.json"
@@ -13,6 +14,44 @@ stop_words = ['a', 'about', 'above', 'after', 'again', 'against', 'all', 'am', '
 'myself', 'no', 'nor', 'not', 'of', 'off', 'on', 'once', 'only', 'or', 'other', 'ought', 'our', 'ours', 'ourselves', 'out', 'over', 'own', 'same', "shan't", 'she', "she'd", "she'll", "she's", 'should', "shouldn't", 'so', 'some', 
 'such', 'than', 'that', "that's", 'the', 'their', 'theirs', 'them', 'themselves', 'then', 'there', "there's", 'these', 'they', "they'd", "they'll", "they're", "they've", 'this', 'those', 'through', 'to', 'too', 'under', 'until', 
 'up', 'very', 'was', "wasn't", 'we', "we'd", "we'll", "we're", "we've", 'were', "weren't", 'what', "what's", 'when', "when's", 'where', "where's", 'which', 'while', 'who', "who's", 'whom', 'why', "why's", 'with', "won't", 'would', "wouldn't", 'you', "you'd", "you'll", "you're", "you've", 'your', 'yours', 'yourself', 'yourselves']
+
+# Load json save file
+if os.path.exists(SAVE_FILE):
+    with open(SAVE_FILE, "r") as file:
+        json_file = json.load(file)
+        unique_pages = set(json_file["unique_pages"])
+        longest_page = json_file["longest_page"]
+        top_50_words = json_file["top_50_words"]
+        sub_domains = json_file["sub_domains"]
+else:
+    unique_pages = set()
+    longest_page = {}
+    top_50_words = {}
+    sub_domains = {}
+
+# Load json hash file
+if os.path.exists(HASHES_FILE):
+    with open(HASHES_FILE, "r") as file:
+        all_hashes = json.load(file)
+else:
+    all_hashes = {}
+
+
+# Save json save
+def save_json_save_file():
+    with open(SAVE_FILE, "w") as file:
+        json.dump({
+            "unique_pages": list(unique_pages),
+            "longest_page": longest_page,
+            "top_50_words": top_50_words,
+            "sub_domains": sub_domains
+        }, file, indent=4)
+
+
+# Save json hash
+def save_json_hash_file():
+    with open("all_hashes.json", "w") as file:
+        json.dump(all_hashes, file, indent=4)
 
 
 def make_report():
@@ -43,20 +82,6 @@ def make_report():
 def scraper(url, resp):
     links = extract_next_links(url, resp)
 
-    # Load json save file
-    if os.path.exists(SAVE_FILE):
-        with open(SAVE_FILE, "r") as file:
-            json_file = json.load(file)
-            unique_pages = set(json_file["unique_pages"])
-            longest_page = json_file["longest_page"]
-            top_50_words = json_file["top_50_words"]
-            sub_domains = json_file["sub_domains"]
-    else:
-        unique_pages = set()
-        longest_page = {}
-        top_50_words = {}
-        sub_domains = {}
-
     valid_links = []
     for link in links:
         if is_valid_domain(link):
@@ -72,13 +97,8 @@ def scraper(url, resp):
         if is_valid(link):
             valid_links.append(link)
     
-    with open(SAVE_FILE, "w") as file:
-        json.dump({
-            "unique_pages": list(unique_pages),
-            "longest_page": longest_page,
-            "top_50_words": top_50_words,
-            "sub_domains": sub_domains
-        }, file, indent=4)
+    save_json_save_file()
+    save_json_hash_file()
 
     return valid_links
 
@@ -116,22 +136,13 @@ def extract_next_links(url, resp):
         words.append(paragraph.get_text(strip=True))
     all_paragraphs = " ".join(words)
 
-    # Greater than 5000 paragraph words
-    if len(all_paragraphs.split()) >= 5000:
-        return links
-
     # Less than 35 words
-    if len(all_paragraphs.split()) <= 35:
+    if len(all_paragraphs.split()) <= 30:
         return links
     
     # Detect and avoid sets of similar pages with no information
     #https://spotintelligence.com/2023/01/02/simhash/
     # simhash
-    if os.path.exists(HASHES_FILE):
-        with open(HASHES_FILE, "r") as file:
-            all_hashes = json.load(file)
-    else:
-        all_hashes = {}
 
     # Get final hash of current content
     final_hash = simhash(content)
@@ -144,25 +155,9 @@ def extract_next_links(url, resp):
 
     # Not similar to past ones, add to prev hashes json
     all_hashes[url] = final_hash
-    with open("all_hashes.json", "w") as file:
-        json.dump(all_hashes, file, indent=4)
 
     # FOR REPORT
     all_text = get_clean_words(content)
-
-    # Load json save file
-    if os.path.exists(SAVE_FILE):
-        with open(SAVE_FILE, "r") as file:
-            json_file = json.load(file)
-            unique_pages = set(json_file["unique_pages"])
-            longest_page = json_file["longest_page"]
-            top_50_words = json_file["top_50_words"]
-            sub_domains = json_file["sub_domains"]
-    else:
-        unique_pages = set()
-        longest_page = {}
-        top_50_words = {}
-        sub_domains = {}
 
     # All checks passed, defragment and return
     for link in content.find_all("a", href=True):
@@ -186,15 +181,6 @@ def extract_next_links(url, resp):
             lower_word = word.lower()
             if lower_word not in stop_words:
                 top_50_words[lower_word] = 1 + top_50_words.get(lower_word, 0)
-
-    # Save into save file
-    with open(SAVE_FILE, "w") as file:
-        json.dump({
-            "unique_pages": list(unique_pages),
-            "longest_page": longest_page,
-            "top_50_words": top_50_words,
-            "sub_domains": sub_domains
-        }, file, indent=4)
 
     return links
 
@@ -228,14 +214,11 @@ def is_valid(url):
         # Detect and avoid infinite traps
         #https://www.conductor.com/academy/crawler-traps/
         traps = ["calendar", "year=", "month=", "day=", "date=",
-                "year", "month", "day", "date"
-                "week", "week=", "sort=", "id=",
+                "year", "month", "day", "date",
+                "week", "week=", "page", "pages", "page_id", "pageid",
                 "tribe", "custom", "doku.php",
-                "page=", "page_id=", "pageid=",
-                "page", "sort", "id", "page_id",
-                "search", "filter=", "filter", "limit=", "limit", "order=",
                 "replytocom=", "reply=", "mailto=", "mailto:",
-                "ical"]
+                "ical", "eventdate", "eventdisplay", "post_type", "tribe-bar-date"]
 
         path_words = [word.lower() for word in (parsed.path).split("/") if word]
         if set(traps).intersection(path_words):
@@ -246,8 +229,11 @@ def is_valid(url):
             return False
         
         # FOR DATES AKA THE ICS CALENDAR, gets 4digit-2digit-optional 2digit, if any path matches, false
-        date = re.compile(r"\b\d{4}-\d{2}(-\d{2})?\b")
+        query_words_vals = parse_qs(parsed.query).values()
+        date = re.compile(r"\d{4}-\d{2}(-\d{2})?")
         if any(date.fullmatch(word) for word in path_words):
+            return False
+        if any(date.fullmatch(word[0]) for word in query_words_vals):
             return False
 
         # Check if valid domain
@@ -260,10 +246,7 @@ def is_valid(url):
 
 # Get frequency of words
 def get_word_freq(all_clean_words):
-    word_freq = {}
-    for word in all_clean_words:
-        word_freq[word] = 1 + word_freq.get(word, 0)
-    return word_freq
+    return Counter(all_clean_words)
 
 
 # Get clean words ascii

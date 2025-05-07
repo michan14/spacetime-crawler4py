@@ -215,7 +215,7 @@ def is_valid(url):
         #https://www.conductor.com/academy/crawler-traps/
         traps = ["calendar", "year=", "month=", "day=", "date=",
                 "year", "month", "day", "date",
-                "week", "week=", "page", "pages", "page_id", "pageid",
+                "week", "week=", "page_id", "pageid",
                 "tribe", "custom", "doku.php",
                 "replytocom=", "reply=", "mailto=", "mailto:",
                 "ical", "eventdate", "eventdisplay", "post_type", "tribe-bar-date"]
@@ -313,28 +313,3 @@ def is_valid_domain(url):
     except TypeError:
         print ("TypeError for ", parsed)
         raise
-
-# when all checks good/call in extractnextlinks,
-
-# unique pages: just store all in array, if new url not in array, add it
-# - use len(unique_pages) when making report
-
-# longest num of words not including html markup, use get_text() beutifl soup
-# - store this url/num in a dict, if > then change
-
-# 50 most common words not including english stop words that are sorted by frequency
-# - use all_clean_words = get_clean_words(content), word_freq = get_word_freq(all_clean_words)
-# - instaed of get_word_freq, make new function using the global dict
-# - if not in english stop words add to dict
-# - sort in make_report, like in A1
-
-# Subdomains in uci.edu (ex: https://cs.ics.uci.edu/)
-# - like in word_freq
-# - get hostname
-# - if hostname=TRUE and hostname ends with uci.edu, do the get thing leetcode with 1 + get on dict
-# - in make_report sort alphabetically
-
-# in worker when make_report is called and info is returned (4 things)
-# - make 4 different txt files containng them
-
-# CALL MAKE REPORT IN WORKER WHEN FRONTIER DONE
